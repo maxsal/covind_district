@@ -65,7 +65,8 @@ view_districts <- function(state) {
   
   read_csv(here("data", "districts.csv"),
            col_types = cols()) %>%
-    filter(state == tmp)
+    filter(state == tmp) %>%
+    as.data.frame()
 }
 
 # calculate R estimate for a given state and district pair
@@ -105,7 +106,31 @@ covid19india_r_est <- function(st, dist, save = FALSE) {
 input_r_est <- function(file, district = NULL, save = FALSE) {
   
   message("reading `.csv` input file")
-  tmp <- read_csv(here("data", "input", file))
+  tmp <- read_csv(here("data", "input", file), col_types = cols())
+  
+  tmp_tvr <- tmp %>%
+    mutate(date = as.Date(date, format = '%d-%m-%Y')) %>%
+    arrange(date) %>%
+    get_r0()
+  
+  if (save == TRUE) {
+    if (is.null(district)) {
+      stop("please add `district` argument to `input_r_est()` function")
+    } else {
+      tmp_filename <- glue("{district}_r_data_{format(Sys.Date(), '%Y%m%d')}.csv")
+      message(glue("saving time-varying R estimate data to `data/output` subfolder as `{tmp_filename}`"))
+      write_csv(tmp_tvr, file = here("data", "output", tmp_filename))
+    }
+  }
+  
+  return(tmp_tvr)
+  
+}
+
+excel_input_r_est <- function(file, district = NULL, save = FALSE) {
+  
+  message("reading excel input file")
+  tmp <- read_excel(here("data", "input", file))
   
   tmp_tvr <- tmp %>%
     arrange(date) %>%
@@ -124,21 +149,34 @@ input_r_est <- function(file, district = NULL, save = FALSE) {
   return(tmp_tvr)
   
 }
-
 # plot tvr -----------
-plot_tvr <- function(dat, district, save = FALSE) {
+plot_manual_tvr <- function(dat, district, start_date = NULL, end_date = NULL, save = FALSE) {
+  
+  if (is.null(start_date)) {
+    start_date <- min(dat$date, na.rm = T)
+  } else {
+    start_date <- max(c(min(dat$date, na.rm = T), start_date))
+  }
+  
+  if (is.null(end_date)) {
+    end_date <- max(dat$date, na.rm = T)
+  } else {
+    end_date <- min(c(max(dat$date, na.rm = T), end_date))
+  }
+  
   
   tmp_plt <- dat %>%
+    dplyr::filter(date >= start_date & date <= end_date) %>%
     ggplot(aes(x = date, y = r)) +
     geom_hline(yintercept = 1, color = "#FF9933", size = 0.5) +
     geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.5, fill = "#138808") +
     geom_line(color = "#138808", size = 1) +
     geom_point(size = 0.5, color = "black") +
     labs(
-      title   = glue("Time-varying R estimate in {district}"),
-      x       = "Date",
-      y       = "R(t)",
-      caption = "**Data source:** covid19india.org"
+      title    = glue("Time-varying R estimate in {district}"),
+      subtitle = glue("{format(start_date, '%e %B, %Y')} to {format(end_date, '%e %B, %Y')}"),
+      x        = "Date",
+      y        = "R(t)"
     ) +
     theme_classic() +
     theme(
